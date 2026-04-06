@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from collections import Counter
 import io
 
 # Set page configuration
@@ -21,25 +22,36 @@ packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['x
 
 if packing_file:
     # 1. READ AND PROCESS DATA
-    # Based on your packing list structure [cite: 1, 2]
+    # We skip the first 2 rows to reach the headers [cite: 1]
     df = pd.read_excel(packing_file, header=2)
     
-    # Filter to get only the rows with actual data [cite: 2]
-    df_items = df.dropna(subset=['P.O.'])
+    # FIX 1: "Fill Down" the Pallet QTY so every row has its pallet number 
+    df['PALLET QTY'] = df['PALLET QTY'].ffill()
     
-    # Perform Calculations 
-    total_units = df_items['Total Units'].sum()
-    total_weight_lbs = df_items['Weight / Pallet'].sum() # Example: 3,232 LBS 
-    total_weight_kgs = total_weight_lbs * 0.453592 # Conversion
+    # Filter to get only item rows (rows with an SKU or Units) [cite: 1]
+    df_items = df.dropna(subset=['Total Units'])
     
-    # Extract unique dimensions for the "DIMENSIONS" section 
-    unique_dims = df_items['Dim / Pallet'].dropna().unique().tolist()
-    pallet_count = df_items['PALLET QTY'].nunique()
+    # FIX 2: Correct Total Units and Weight
+    total_units = int(df_items['Total Units'].sum()) [cite: 4]
+    # Weight / Pallet only appears on specific rows, so we sum that specifically [cite: 1]
+    total_weight_lbs = df['Weight / Pallet'].sum() [cite: 4]
+    total_weight_kgs = total_weight_lbs * 0.453592 
+    
+    # FIX 3: Group Dimensions (e.g., "47 x 31 x 52 (x2)")
+    # We grab the dimension listed for each pallet [cite: 1]
+    raw_dims = df['Dim / Pallet'].dropna().astype(str).tolist()
+    dim_counts = Counter(raw_dims)
+    formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
+    
+    pallet_count = int(df['PALLET QTY'].max()) [cite: 4]
 
-    st.success(f"✅ Data extracted: {pallet_count} Pallets found.")
+    st.success(f"✅ Data extracted: {pallet_count} Pallets and {total_units} Units found.")
 
-    # --- THE GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
+        # ... (Rest of the generation and email code) ...
+        
+        # In the quote_data section, use the new formatted_dims:
+        # ["DIMENSIONS", " | ".join(formatted_dims)],
         
         # 2. CREATE THE EXCEL QUOTE (MATCHING YOUR TARGET )
         quote_data = [
