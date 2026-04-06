@@ -22,23 +22,31 @@ packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['x
 
 if packing_file:
     # 1. READ AND PROCESS DATA
-    # Skipping first 2 rows to reach the header: [PALLET QTY, P.O., SKU...]
+    # Skipping first 2 rows to reach headers: [PALLET QTY, P.O., SKU...]
     df = pd.read_excel(packing_file, header=2)
     
     # FIX 1: Fill down the Pallet QTY so every row belongs to a pallet number
     df['PALLET QTY'] = df['PALLET QTY'].ffill()
     
-    # Filter to get only rows that have actual item data
-    df_items = df.dropna(subset=['Total Units'])
+    # NEW FIX: Convert numeric columns and ignore text errors (like "Units" or "LBS" in rows)
+    df['Total Units'] = pd.to_numeric(df['Total Units'], errors='coerce')
+    df['Weight / Pallet'] = pd.to_numeric(df['Weight / Pallet'], errors='coerce')
+    
+    # Filter to get only rows that have an actual Purchase Order (ignores summary rows at the bottom)
+    df_items = df.dropna(subset=['P.O.'])
     
     # FIX 2: Perform Calculations
     total_units = int(df_items['Total Units'].sum())
-    # Sum only the 'Weight / Pallet' column (which contains the 610, 435, etc. values)
+    # Sum only the 'Weight / Pallet' column values
     total_weight_lbs = df['Weight / Pallet'].sum()
     total_weight_kgs = total_weight_lbs * 0.453592 
     
     # FIX 3: Group Dimensions (e.g., "47 X 31 X 52 (x2)")
+    # Extract unique dimensions for each pallet
     raw_dims = df['Dim / Pallet'].dropna().astype(str).tolist()
+    # Filter out any header-like text that might have been picked up
+    raw_dims = [d for d in raw_dims if "Dim" not in d]
+    
     dim_counts = Counter(raw_dims)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
     
