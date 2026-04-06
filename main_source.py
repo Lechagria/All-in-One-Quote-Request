@@ -68,7 +68,7 @@ if packing_file:
 
         quote_data.extend([
             ["", ""],
-            ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGS"],
+            ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGSs"],
             ["COMMODITY", commodity],
             ["INCOTERMS", incoterms],
             ["VALUE OF CARGO", cargo_value]
