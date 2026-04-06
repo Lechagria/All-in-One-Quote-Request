@@ -51,7 +51,7 @@ if packing_file:
         # ... (Rest of the generation and email code) ...
         
         # In the quote_data section, use the new formatted_dims:
-        # ["DIMENSIONS", " | ".join(formatted_dims)],
+        ["DIMENSIONS", " | ".join(formatted_dims)],
         
         # 2. CREATE THE EXCEL QUOTE (MATCHING YOUR TARGET )
         quote_data = [
