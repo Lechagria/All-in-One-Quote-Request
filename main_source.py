@@ -22,50 +22,57 @@ packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['x
 
 if packing_file:
     # 1. READ AND PROCESS DATA
-    # We skip the first 2 rows to reach the headers [cite: 1]
+    # Skipping first 2 rows to reach the header: [PALLET QTY, P.O., SKU...]
     df = pd.read_excel(packing_file, header=2)
     
-    # FIX 1: "Fill Down" the Pallet QTY so every row has its pallet number 
+    # FIX 1: Fill down the Pallet QTY so every row belongs to a pallet number
     df['PALLET QTY'] = df['PALLET QTY'].ffill()
     
-    # Filter to get only item rows (rows with an SKU or Units) [cite: 1]
+    # Filter to get only rows that have actual item data
     df_items = df.dropna(subset=['Total Units'])
     
-    # FIX 2: Correct Total Units and Weight
-    total_units = int(df_items['Total Units'].sum()) [cite: 4]
-    # Weight / Pallet only appears on specific rows, so we sum that specifically [cite: 1]
-    total_weight_lbs = df['Weight / Pallet'].sum() [cite: 4]
+    # FIX 2: Perform Calculations
+    total_units = int(df_items['Total Units'].sum())
+    # Sum only the 'Weight / Pallet' column (which contains the 610, 435, etc. values)
+    total_weight_lbs = df['Weight / Pallet'].sum()
     total_weight_kgs = total_weight_lbs * 0.453592 
     
-    # FIX 3: Group Dimensions (e.g., "47 x 31 x 52 (x2)")
-    # We grab the dimension listed for each pallet [cite: 1]
+    # FIX 3: Group Dimensions (e.g., "47 X 31 X 52 (x2)")
     raw_dims = df['Dim / Pallet'].dropna().astype(str).tolist()
     dim_counts = Counter(raw_dims)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
     
-    pallet_count = int(df['PALLET QTY'].max()) [cite: 4]
+    # Correct pallet count based on the max value found in the filled column
+    pallet_count = int(df['PALLET QTY'].max())
 
-    st.success(f"✅ Data extracted: {pallet_count} Pallets and {total_units} Units found.")
+    st.success(f"✅ Data extracted: {pallet_count} Pallets and {total_units:,} Units found.")
 
+    # --- THE GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
-        # ... (Rest of the generation and email code) ...
         
-        # In the quote_data section, use the new formatted_dims:
-        ["DIMENSIONS", " | ".join(formatted_dims)],
-        
-        # 2. CREATE THE EXCEL QUOTE (MATCHING YOUR TARGET )
+        # 2. CREATE THE EXCEL QUOTE STRUCTURE
         quote_data = [
             ["QUOTE REQUEST", ""],
             ["DESTINATION", destination],
             ["SERVICE", service],
             ["UNITS", total_units],
             ["PALLETS", pallet_count],
-            ["DIMENSIONS", " | ".join(unique_dims)],
+            ["DIMENSIONS", formatted_dims[0] if formatted_dims else ""],
+        ]
+        
+        # Add extra dimension rows if they exist
+        if len(formatted_dims) > 1:
+            for extra_dim in formatted_dims[1:]:
+                quote_data.append(["", extra_dim])
+
+        # Add the remaining footer data
+        quote_data.extend([
+            ["", ""],
             ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGS"],
             ["COMMODITY", commodity],
             ["INCOTERMS", incoterms],
             ["VALUE OF CARGO", cargo_value]
-        ]
+        ])
         
         df_quote = pd.DataFrame(quote_data)
 
@@ -78,14 +85,16 @@ if packing_file:
         email_body = f"""
 Hi Team,
 
-Please provide a quote for the following:
+Please provide a quote for the following outbound shipment:
 - Destination: {destination}
 - Service: {service}
-- Pallets: {pallet_count}
+- Total Units: {total_units:,}
+- Total Pallets: {pallet_count}
 - Weight: {total_weight_lbs:,.2f} LBS ({total_weight_kgs:,.2f} KGS)
 - Commodity: {commodity}
+- Value: {cargo_value}
 
-Form attached. Thanks!
+Please find the formal Quote Request attached. Thanks!
         """
 
         # --- DISPLAY RESULTS ---
@@ -97,14 +106,15 @@ Form attached. Thanks!
             st.download_button(
                 label="📥 Download Quote Request.xlsx",
                 data=buffer.getvalue(),
-                file_name="Generated_Quote_Request.xlsx",
+                file_name=f"Quote_Request_{pallet_count}PLTS.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.table(df_quote) # Show preview of the generated data
+            st.write("**Preview:**")
+            st.table(df_quote) 
 
         with col_em:
             st.subheader("2. Copy Email")
-            st.text_area("Copy into your email draft:", value=email_body, height=300)
+            st.text_area("Copy into your email draft:", value=email_body, height=350)
 
 else:
-    st.info("Waiting for Packing List upload...")
+    st.info("Please upload the Outbound Packing List to begin.")
