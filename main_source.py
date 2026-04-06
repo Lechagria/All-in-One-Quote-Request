@@ -1,98 +1,98 @@
 import streamlit as st
 import pandas as pd
-from openpyxl import load_workbook
 import io
 
+# Set page configuration
 st.set_page_config(page_title="Logistics Quote Generator", layout="wide")
 
-st.title("📦 Smart Logistics Quote Pipeline")
-st.markdown("This version automatically finds the data, even if the number of pallets changes.")
+st.title("📦 Logistics Quote Pipeline")
 
 # --- SIDEBAR: MANUAL INPUTS ---
 with st.sidebar:
     st.header("Shipment Details")
-    destination = st.text_input("Destination Address/City", "UK - Radial FAO Monat...")
+    destination = st.text_input("Destination", value="UK - Radial FAO Monat, Middleton Oldham OL9 9XA")
     service = st.selectbox("Service", ["LCL", "LTL", "FCL", "Air", "Courier"])
-    incoterms = st.selectbox("Incoterms", ["DAP", "DDP", "EXW", "FOB", "CIF"])
-    commodity = st.text_input("Commodity", "Finished goods / Haircare")
-    cargo_value = st.text_input("Value of Cargo", "USD$ 30,000.00")
+    commodity = st.text_input("Commodity", value="Finished goods / Haircare / Skincare")
+    cargo_value = st.text_input("Value of Cargo", value="USD$ 33,650.35")
+    incoterms = st.selectbox("Incoterms", ["-", "EXW", "FOB", "DDP", "DAP", "CIF"])
 
 # --- MAIN: FILE UPLOAD ---
-col1, col2 = st.columns(2)
-with col1:
-    packing_file = st.file_uploader("Upload Packing List (.xlsx)", type=['xlsx'])
-with col2:
-    template_file = st.file_uploader("Upload Your Quote Template (.xlsx)", type=['xlsx'])
+packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['xlsx'])
 
-if packing_file and template_file:
-    # --- DYNAMIC DATA EXTRACTION ---
-    # We read the excel and skip the top branding rows to find the header
-    df = pd.read_excel(packing_file, header=2) 
+if packing_file:
+    # 1. READ AND PROCESS DATA
+    # Based on your packing list structure [cite: 1, 2]
+    df = pd.read_excel(packing_file, header=2)
     
-    # We clean the data to remove any 'Total' rows the outbound team might have added
-    # We only want rows that actually have a PO Number
-    df_clean = df.dropna(subset=['P.O.'])
+    # Filter to get only the rows with actual data [cite: 2]
+    df_items = df.dropna(subset=['P.O.'])
     
-    # CALCULATIONS (This works whether you have 1 pallet or 100)
-    # Using the exact headers from your file: 'Tot. Weight / Bxs' and 'CBM'
-    # Note: If CBM isn't a column, we can calculate it from dimensions!
-    total_weight_kg = df_clean['Tot. Weight / Bxs'].sum()
-    total_pallets = df_clean['PALLET QTY'].nunique() # Counts unique pallet IDs
-    po_numbers = ", ".join(df_clean['P.O.'].unique().astype(str))
-
-    st.success(f"✅ Extracted data for {total_pallets} Pallets across POs: {po_numbers}")
-
-    # --- EXCEL FILLING ---
-    template_bytes = template_file.read()
-    wb = load_workbook(io.BytesIO(template_bytes))
-    ws = wb.active 
-
-    # MAPPING TO YOUR TEMPLATE (Adjust cell letters as needed)
-    ws['B2'] = destination
-    ws['B3'] = service
-    ws['B5'] = total_pallets
-    ws['B11'] = f"{total_weight_kg:.2f} KGS"
-    ws['B12'] = commodity
-    ws['B13'] = incoterms
-    ws['B14'] = cargo_value
-
-    # Save to memory
-    output = io.BytesIO()
-    wb.save(output)
+    # Perform Calculations 
+    total_units = df_items['Total Units'].sum()
+    total_weight_lbs = df_items['Weight / Pallet'].sum() # Example: 3,232 LBS 
+    total_weight_kgs = total_weight_lbs * 0.453592 # Conversion
     
-    # --- EMAIL DRAFT ---
-    email_body = f"""
-Subject: Quote Request - {service} - {destination}
+    # Extract unique dimensions for the "DIMENSIONS" section 
+    unique_dims = df_items['Dim / Pallet'].dropna().unique().tolist()
+    pallet_count = df_items['PALLET QTY'].nunique()
 
+    st.success(f"✅ Data extracted: {pallet_count} Pallets found.")
+
+    # --- THE GENERATE BUTTON ---
+    if st.button("🚀 Generate Template"):
+        
+        # 2. CREATE THE EXCEL QUOTE (MATCHING YOUR TARGET )
+        quote_data = [
+            ["QUOTE REQUEST", ""],
+            ["DESTINATION", destination],
+            ["SERVICE", service],
+            ["UNITS", total_units],
+            ["PALLETS", pallet_count],
+            ["DIMENSIONS", " | ".join(unique_dims)],
+            ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGS"],
+            ["COMMODITY", commodity],
+            ["INCOTERMS", incoterms],
+            ["VALUE OF CARGO", cargo_value]
+        ]
+        
+        df_quote = pd.DataFrame(quote_data)
+
+        # Buffer for the Excel file
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_quote.to_excel(writer, index=False, header=False, sheet_name='Quote Request')
+        
+        # 3. GENERATE EMAIL CONTENT
+        email_body = f"""
 Hi Team,
 
-Please provide a quote for the following shipment:
-- POs: {po_numbers}
+Please provide a quote for the following:
 - Destination: {destination}
 - Service: {service}
-- Total Pallets: {total_pallets}
-- Total Weight: {total_weight_kg:.2f} KGS
-- Incoterm: {incoterms}
+- Pallets: {pallet_count}
+- Weight: {total_weight_lbs:,.2f} LBS ({total_weight_kgs:,.2f} KGS)
+- Commodity: {commodity}
 
-Packing list is attached. Thanks!
-    """
+Form attached. Thanks!
+        """
 
-    # --- UI RESULTS ---
-    st.divider()
-    res_left, res_right = st.columns(2)
-    
-    with res_left:
-        st.subheader("1. Download Your Form")
-        st.download_button(
-            label="📥 Download Quote Request",
-            data=output.getvalue(),
-            file_name=f"Quote_Request_{po_numbers[:10]}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    
-    with res_right:
-        st.subheader("2. Copy Email")
-        st.text_area("Email Script:", value=email_body, height=200)
+        # --- DISPLAY RESULTS ---
+        st.divider()
+        col_dl, col_em = st.columns(2)
+        
+        with col_dl:
+            st.subheader("1. Download Document")
+            st.download_button(
+                label="📥 Download Quote Request.xlsx",
+                data=buffer.getvalue(),
+                file_name="Generated_Quote_Request.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.table(df_quote) # Show preview of the generated data
+
+        with col_em:
+            st.subheader("2. Copy Email")
+            st.text_area("Copy into your email draft:", value=email_body, height=300)
 
 else:
-    st.warning("Please upload both files to generate the quote.")
+    st.info("Waiting for Packing List upload...")
