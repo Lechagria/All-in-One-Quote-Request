@@ -158,7 +158,7 @@ Thanks!"""
             st.download_button("📥 Download Excel", data=buf.getvalue(), file_name=f"Quote_{pallets_final}PLTS.xlsx")
             st.table(df_output)
         with c2:
-           st.subheader("2. Email Draft")
+            st.subheader("2. Email Draft")
             # NEW: COPY TO CLIPBOARD BUTTON
             st.copy_to_clipboard(email_body)
             st.info("👆 Click the button above to copy the email.")
