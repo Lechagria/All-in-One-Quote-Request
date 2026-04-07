@@ -20,7 +20,7 @@ with st.sidebar:
 packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['xlsx'])
 
 if packing_file:
-    # Read the whole sheet as strings first to find keywords easily
+    # Read the whole sheet as strings to find keywords
     df_raw = pd.read_excel(packing_file, header=None).astype(str)
     
     # Helper to find a value based on a keyword
@@ -28,64 +28,74 @@ if packing_file:
         for r in range(len(df_raw)):
             for c in range(len(df_raw.columns)):
                 if keyword.lower() in df_raw.iloc[r, c].lower():
-                    # Return the cell at the offset
-                    res = df_raw.iloc[r + row_off, c + col_off]
-                    return res
+                    try:
+                        return df_raw.iloc[r + row_off, c + col_off]
+                    except:
+                        return "0"
         return "0"
 
-    # 1. GRAB TOTALS FROM FOOTER (Looking above the labels as per your image)
-    pallet_count = get_val("Pallets", row_off=-1)
-    total_units = get_val("Units", row_off=-1)
-    total_weight_lbs = get_val("Gross Weight", row_off=-1)
-
-    # Clean the numbers (remove commas or symbols)
+    # NEW: Robust number cleaner that handles commas like "9,132"
     def clean_num(val):
+        if pd.isna(val) or str(val).lower() == 'nan':
+            return 0.0
+        # Remove commas and any other non-numeric chars except the decimal point
         clean = "".join(c for c in str(val) if c.isdigit() or c == '.')
-        return float(clean) if clean else 0.0
+        try:
+            return float(clean)
+        except:
+            return 0.0
 
-    pallets_final = int(clean_num(pallet_count))
-    units_final = int(clean_num(total_units))
-    lbs_final = clean_num(total_weight_lbs)
+    # 1. GRAB TOTALS FROM FOOTER (Looking above the labels)
+    pallet_raw = get_val("Pallets", row_off=-1)
+    units_raw = get_val("Units", row_off=-1)
+    weight_raw = get_val("Gross Weight", row_off=-1)
+
+    pallets_final = int(clean_num(pallet_raw))
+    units_final = int(clean_num(units_raw))
+    lbs_final = clean_num(weight_raw)
     kgs_final = lbs_final * 0.453592
 
     # 2. DYNAMIC DIMENSION FINDER
-    # Instead of 'Dim / Pallet', we find whichever column contains "Dim" and "Pallet"
     dim_list = []
     dim_col_idx = -1
     
-    # Find which column index has the dimensions
+    # Find column that contains "Dim" and "Pallet" (usually column N or O)
     for c in range(len(df_raw.columns)):
-        column_data = df_raw.iloc[:, c]
-        if any("dim" in str(val).lower() and "pallet" in str(val).lower() for val in column_data):
+        if any("dim" in str(val).lower() and "pallet" in str(val).lower() for val in df_raw.iloc[:, c]):
             dim_col_idx = c
             break
     
     if dim_col_idx != -1:
-        # Get all values in that column, skip headers, and filter out noise
+        # Start looking after the header rows
         potential_dims = df_raw.iloc[3:, dim_col_idx].tolist()
-        dim_list = [d.strip() for d in potential_dims if "x" in d.lower() and len(d) > 3]
+        # Only keep strings that look like "47 X 31 X 52"
+        dim_list = [d.strip() for d in potential_dims if "x" in d.lower() and len(d) > 5]
 
     dim_counts = Counter(dim_list)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
 
-    st.success(f"✅ Data Found: {pallets_final} Pallets | {units_final:,} Units | {lbs_final:,.2f} LBS")
+    st.success(f"✅ Data Extracted: {pallets_final} Pallets | {units_final:,} Units | {lbs_final:,.2f} LBS")
 
     # --- GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
         
-        # 3. CONSTRUCT THE OUTPUT
+        # 3. CONSTRUCT THE OUTPUT TABLE
         quote_data = [
             ["QUOTE REQUEST", ""],
             ["DESTINATION", destination],
             ["SERVICE", service],
             ["UNITS", f"{units_final:,}"],
             ["PALLETS", pallets_final],
-            ["DIMENSIONS", formatted_dims[0] if formatted_dims else ""],
         ]
         
-        if len(formatted_dims) > 1:
-            for extra_dim in formatted_dims[1:]:
-                quote_data.append(["", extra_dim])
+        # Dimensions
+        if formatted_dims:
+            quote_data.append(["DIMENSIONS", formatted_dims[0]])
+            if len(formatted_dims) > 1:
+                for extra_dim in formatted_dims[1:]:
+                    quote_data.append(["", extra_dim])
+        else:
+            quote_data.append(["DIMENSIONS", "Pending"])
 
         quote_data.extend([
             ["", ""],
@@ -105,10 +115,12 @@ if packing_file:
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
+            st.subheader("1. Final Form")
             st.download_button("📥 Download Excel", data=buf.getvalue(), file_name="Quote_Request.xlsx")
             st.table(df_output)
         with c2:
-            email = f"Hi,\n\nQuote for {destination}:\n- {pallets_final} Pallets\n- {lbs_final} LBS\n\nThanks!"
-            st.text_area("Email:", value=email, height=300)
+            st.subheader("2. Email Draft")
+            email = f"Hi Team,\n\nPlease quote {service} to {destination}:\n- {pallets_final} Pallets\n- {lbs_final:,.2f} LBS\n- {units_final:,} Units\n\nThanks!"
+            st.text_area("Copy Email:", value=email, height=300)
 else:
-    st.info("Upload your Packing List to begin.")
+    st.info("Please upload the Outbound Packing List to proceed.")
