@@ -11,10 +11,10 @@ st.title("📦 Logistics Quote Pipeline")
 # --- CUSTOM LISTS ---
 destinations = [
     "UK - Radial FAO Monat, Middleton Oldham OL9 9XA",
-    "POLAND - Panattoni Park Pruszków IV, ul. Przejazdowa 25, 05-800 Pruszków",
-    "SPAIN - MONAT Spain c/o Logifashion, Calle de la Malvasia 2, 19200 Azuqueca de Henares, Guadalajara",
-    "LITHUANIA - Girteka Logistics, Metalistų g. 6, LT-78107 Šiauliai",
-    "IRELAND - Monat Ireland c/o Ace Express Freight, Unit 3, Blakes Cross Business Park, Lusk, Co. Dublin",
+    "POLAND - Radial Poland Sp. z o.o. Moszna Parcela 29, Budynek C3 05-840 Brwinów",
+    "AUSTRALIA - FDM WAREHOUSING C/O Landmark Global 7 Eucalyptus Place",
+    "MONAT Global Canada — 135 SPARKS AVE NORTH YORK ON M2H 2S5 Canada",
+    "FENIX FWD INC. - 417 LOGISTIC LAREDO, TEXAS 78045",
     "OTHER (Type Manually below)"
 ]
 
@@ -23,6 +23,9 @@ services = [
     "LTL Road",
     "FCL Ocean",
     "Air Freight",
+    "40 REEFER",
+    "40 DRY",
+    "20 DRY",
     "Courier"
 ]
 
@@ -67,6 +70,7 @@ if packing_file:
     def clean_num(val):
         if pd.isna(val) or str(val).lower() == 'nan':
             return 0.0
+        # Aggressively remove anything that isn't a digit or a decimal point
         clean = re.sub(r'[^\d.]', '', str(val))
         try:
             return float(clean)
@@ -103,6 +107,7 @@ if packing_file:
     # --- GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
         
+        # 4. CONSTRUCT THE EXCEL OUTPUT
         quote_data = [
             ["QUOTE REQUEST", ""],
             ["DESTINATION", destination],
@@ -132,6 +137,31 @@ if packing_file:
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
             df_output.to_excel(writer, index=False, header=False)
 
+        # 5. GENERATE PROFESSIONAL EMAIL CONTENT
+        dim_string = "\n".join([f"- Dimensions: {d}" for d in formatted_dims])
+        
+        email_body = f"""Hi Team,
+
+Hope you are having a great week! 
+
+Please find the details below for a new {service} shipment quote:
+
+- Destination: {destination}
+- Service: {service}
+- Total Units: {units_final:,}
+- Pallets: {pallets_final}
+{dim_string}
+- Total Weight: {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS
+- Commodity: {commodity}
+- Value: {cargo_value}
+- Incoterms: {incoterms}
+
+Please let us know the best rates and estimated transit times for this. 
+
+Attached are the Quote Request and Packing List.
+
+Thanks!"""
+
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
@@ -140,7 +170,6 @@ if packing_file:
             st.table(df_output)
         with c2:
             st.subheader("2. Copy Email")
-            email = f"Hi Team—\n\nPlease see attached quote request for our upcoming {service} shipment to {destination}:\n- {pallets_final} Pallets\n- {lbs_final:,.2f} LBS\n- {units_final:,} Units\n\nPlease provide transit time and insurance cost. Reach out if you need any further information from the packing list."
-            st.text_area("Email Draft:", value=email, height=350)
+            st.text_area("Email Draft:", value=email_body, height=450)
 else:
     st.info("Please upload the Outbound Packing List to begin.")
