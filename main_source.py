@@ -20,37 +20,44 @@ with st.sidebar:
 packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['xlsx'])
 
 if packing_file:
-    # 1. READ DATA (Skip first 2 rows for header)
-    df = pd.read_excel(packing_file, header=2)
+    # Read raw data without headers to search freely
+    df_raw = pd.read_excel(packing_file, header=None)
     
-    # 2. CLEAN COLUMNS (Force everything to be a number, turning text into "Empty")
-    # This prevents the crash when it hits words like "Pallets" or "Units"
-    df['PALLET QTY'] = pd.to_numeric(df['PALLET QTY'], errors='coerce')
-    df['Total Units'] = pd.to_numeric(df['Total Units'], errors='coerce')
-    df['Weight / Pallet'] = pd.to_numeric(df['Weight / Pallet'], errors='coerce')
+    # helper function to find numbers near keywords
+    def find_value_near(keyword, offset_row=-1, offset_col=0):
+        try:
+            # Find the row and column index of the keyword
+            mask = df_raw.astype(str).apply(lambda x: x.str.contains(keyword, case=False, na=False))
+            pos = mask.values.nonzero()
+            if len(pos[0]) > 0:
+                row, col = pos[0][0], pos[1][0]
+                val = df_raw.iloc[row + offset_row, col + offset_col]
+                return pd.to_numeric(val, errors='coerce')
+            return 0
+        except:
+            return 0
+
+    # 1. GRAB TOTALS FROM THE SUMMARY FOOTER (As requested)
+    pallet_count = int(find_value_near("Pallets", offset_row=-1)) 
+    total_units = int(find_value_near("Units", offset_row=-1))
+    total_weight_lbs = find_value_near("Gross Weight", offset_row=-1)
     
-    # 3. FILL PALLET NUMBERS (Forward fill the empty gaps)
-    df['PALLET QTY'] = df['PALLET QTY'].ffill()
-    
-    # 4. CALCULATIONS (Ignore the "Empty" text rows)
-    pallet_count = int(df['PALLET QTY'].max()) if not df['PALLET QTY'].dropna().empty else 0
-    total_units = int(df['Total Units'].sum())
-    total_weight_lbs = df['Weight / Pallet'].sum()
+    # Calculate KG based on the LBS found in the footer
     total_weight_kgs = total_weight_lbs * 0.453592
 
-    # 5. DIMENSIONS GROUPING
-    raw_dims = df['Dim / Pallet'].dropna().astype(str).tolist()
-    # Filter out header titles if they got picked up
+    # 2. DIMENSIONS (Still needs to look at the main table)
+    df_table = pd.read_excel(packing_file, header=2)
+    raw_dims = df_table['Dim / Pallet'].dropna().astype(str).tolist()
     raw_dims = [d for d in raw_dims if "Dim" not in d and d.strip() != ""]
     dim_counts = Counter(raw_dims)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
 
-    st.success(f"✅ Extracted: {pallet_count} Pallets | {total_units:,} Units | {total_weight_lbs:,.2f} LBS")
+    st.success(f"✅ Found Footer Totals: {pallet_count} Pallets | {total_units:,} Units | {total_weight_lbs:,.2f} LBS")
 
     # --- THE GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
         
-        # 6. CREATE THE DATA FOR THE TABLE (Exactly as your screenshot)
+        # 3. CREATE THE DATA TABLE FOR EXCEL
         quote_data = [
             ["QUOTE REQUEST", ""],
             ["DESTINATION", destination],
@@ -60,12 +67,10 @@ if packing_file:
             ["DIMENSIONS", formatted_dims[0] if formatted_dims else ""],
         ]
         
-        # Add additional dimension rows if there are multiple sizes
         if len(formatted_dims) > 1:
             for extra_dim in formatted_dims[1:]:
                 quote_data.append(["", extra_dim])
 
-        # Add the footer info
         quote_data.extend([
             ["", ""],
             ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGS"],
@@ -76,43 +81,20 @@ if packing_file:
         
         df_quote = pd.DataFrame(quote_data)
 
-        # 7. EXCEL GENERATION
+        # 4. EXCEL GENERATION
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_quote.to_excel(writer, index=False, header=False, sheet_name='Quote Request')
         
-        # 8. EMAIL DRAFT
-        email_body = f"""
-Hi Team,
-
-Please provide a quote for the following shipment:
-- POs: Found in Packing List
-- Pallets: {pallet_count}
-- Dimensions: {', '.join(formatted_dims)}
-- Weight: {total_weight_lbs:,.2f} LBS ({total_weight_kgs:,.2f} KGS)
-- Destination: {destination}
-
-Quote Request and Packing List attached.
-        """
+        # 5. EMAIL DRAFT
+        email_body = f"Hi Team,\n\nQuote Request for {destination}:\n- {pallet_count} Pallets\n- {total_weight_lbs:,.2f} LBS\n- {total_units:,} Units\n\nAttached: Packing List."
 
         st.divider()
         col_dl, col_em = st.columns(2)
         
         with col_dl:
-            st.subheader("1. Download Document")
-            st.download_button(
-                label="📥 Download Quote Request.xlsx",
-                data=buffer.getvalue(),
-                file_name=f"Quote_Request_{pallet_count}PLTS.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            st.table(df_quote) # This will now show the clean LBS | KG line
+            st.download_button("📥 Download Quote Request.xlsx", data=buffer.getvalue(), file_name=f"Quote_{pallet_count}PLTS.xlsx")
+            st.table(df_quote)
 
         with col_em:
-            st.subheader("2. Copy Email")
-            st.text_area("Email Draft:", value=email_body, height=350)
-
-else:
-    st.info("Upload the Outbound Packing List to get started.")
-else:
-    st.info("Upload the Outbound Packing List to get started.")
+            st.text_area("Email Draft:", value=email_body, height=300)
