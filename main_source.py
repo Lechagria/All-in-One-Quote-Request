@@ -8,13 +8,40 @@ st.set_page_config(page_title="Logistics Quote Generator", layout="wide")
 
 st.title("📦 Logistics Quote Pipeline")
 
+# --- CUSTOM LISTS ---
+destinations = [
+    "UK - Radial FAO Monat, Middleton Oldham OL9 9XA",
+    "POLAND - Panattoni Park Pruszków IV, ul. Przejazdowa 25, 05-800 Pruszków",
+    "SPAIN - MONAT Spain c/o Logifashion, Calle de la Malvasia 2, 19200 Azuqueca de Henares, Guadalajara",
+    "LITHUANIA - Girteka Logistics, Metalistų g. 6, LT-78107 Šiauliai",
+    "IRELAND - Monat Ireland c/o Ace Express Freight, Unit 3, Blakes Cross Business Park, Lusk, Co. Dublin",
+    "OTHER (Type Manually below)"
+]
+
+services = [
+    "LCL Ocean",
+    "LTL Road",
+    "FCL Ocean",
+    "Air Freight",
+    "Courier"
+]
+
 # --- SIDEBAR: MANUAL INPUTS ---
 with st.sidebar:
     st.header("Shipment Details")
-    destination = st.text_input("Destination", value="UK - Radial FAO Monat, Middleton Oldham OL9 9XA")
-    service = st.selectbox("Service", ["LCL", "LTL", "FCL", "Air", "Courier"])
+    
+    # Destination Selection
+    selected_dest = st.selectbox("Select Destination", destinations)
+    if selected_dest == "OTHER (Type Manually below)":
+        destination = st.text_input("Enter Manual Destination", value="")
+    else:
+        destination = selected_dest
+
+    # Service Selection
+    service = st.selectbox("Service", services)
+    
     commodity = st.text_input("Commodity", value="Finished goods / Haircare / Skincare")
-    cargo_value = st.text_input("Value of Cargo", value="USD$ 33,650.35")
+    cargo_value = st.text_input("Value of Cargo", value="USD$ ")
     incoterms = st.selectbox("Incoterms", ["-", "EXW", "FOB", "DDP", "DAP", "CIF"])
 
 # --- MAIN: FILE UPLOAD ---
@@ -36,11 +63,10 @@ if packing_file:
                         return "0"
         return "0"
 
-    # AGGRESSIVE CLEANER: Removes everything except digits and the decimal point
+    # AGGRESSIVE CLEANER: Removes commas, spaces, and text
     def clean_num(val):
         if pd.isna(val) or str(val).lower() == 'nan':
             return 0.0
-        # Regex to keep only numbers and dots (removes commas, spaces, text)
         clean = re.sub(r'[^\d.]', '', str(val))
         try:
             return float(clean)
@@ -62,7 +88,6 @@ if packing_file:
     for c in range(len(df_raw.columns)):
         if any("dim" in str(val).lower() and "pallet" in str(val).lower() for val in df_raw.iloc[:5, c]):
             potential_dims = df_raw.iloc[3:, c].tolist()
-            # Look for values that look like "47 X 31 X 52"
             dim_list = [d.strip() for d in potential_dims if "x" in str(d).lower() and len(str(d)) > 5]
             break
 
@@ -71,7 +96,7 @@ if packing_file:
 
     # UI Feedback
     if pallets_final == 0 and units_final == 0:
-        st.error("⚠️ Couldn't find totals. Please ensure 'Pallets', 'Units', and 'Gross Weight' labels are present in the footer.")
+        st.error("⚠️ Summary not found. Please check 'Pallets' and 'Units' labels in footer.")
     else:
         st.success(f"✅ Data Extracted: {pallets_final} Pallets | {units_final:,} Units | {lbs_final:,.2f} LBS")
 
@@ -111,11 +136,11 @@ if packing_file:
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("1. Download Document")
-            st.download_button("📥 Download Excel", data=buf.getvalue(), file_name="Quote_Request.xlsx")
+            st.download_button("📥 Download Excel", data=buf.getvalue(), file_name=f"Quote_{pallets_final}PLTS.xlsx")
             st.table(df_output)
         with c2:
             st.subheader("2. Copy Email")
-            email = f"Hi Team,\n\nPlease quote {service} to {destination}:\n- {pallets_final} Pallets\n- {lbs_final:,.2f} LBS\n- {units_final:,} Units\n\nThanks!"
+            email = f"Hi Team—\n\nPlease see attached quote request for our upcoming {service} shipment to {destination}:\n- {pallets_final} Pallets\n- {lbs_final:,.2f} LBS\n- {units_final:,} Units\n\nPlease provide transit time and insurance cost. Reach out if you need any further information from the packing list."
             st.text_area("Email Draft:", value=email, height=350)
 else:
     st.info("Please upload the Outbound Packing List to begin.")
