@@ -135,17 +135,15 @@ Hope you are having a great week!
 
 Please find the details below for a new {service} shipment quote:
 
-| Category | Shipment Details |
-| :--- | :--- |
-| **Destination** | {destination} |
-| **Service** | {service} |
-| **Total Units** | {units_final:,} |
-| **Pallets** | {pallets_final} |
-{dim_rows}
-| **Total Weight** | {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS |
-| **Commodity** | {commodity} |
-| **Value** | {cargo_value} |
-| **Incoterms** | {incoterms} |
+- **Destination:** {destination}
+- Service: {service}
+- Total Units: {units_final:,}
+- Pallets: {pallets_final}
+{dim_string}
+- Total Weight: {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS
+- Commodity: {commodity}
+- Value: {cargo_value}
+- Incoterms: {incoterms}
 
 Please let us know the best rates and estimated transit times for this. 
 
@@ -160,7 +158,10 @@ Thanks!"""
             st.download_button("📥 Download Excel", data=buf.getvalue(), file_name=f"Quote_{pallets_final}PLTS.xlsx")
             st.table(df_output)
         with c2:
-            st.subheader("2. Copy Email")
-            st.text_area("Email Draft:", value=email_body, height=500)
+           st.subheader("2. Email Draft")
+            # NEW: COPY TO CLIPBOARD BUTTON
+            st.copy_to_clipboard(email_body)
+            st.info("👆 Click the button above to copy the email.")
+            st.markdown(email_body) # Preview of how it looks
 else:
     st.info("Please upload the Outbound Packing List to begin.")
