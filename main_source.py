@@ -140,7 +140,7 @@ if packing_file:
         # 5. GENERATE PROFESSIONAL EMAIL CONTENT
         dim_string = "\n".join([f"- Dimensions: {d}" for d in formatted_dims])
         
-        email_body = ff"""Hi Team,
+        email_body = f"""Hi Team,
 
 Hope you are having a great week! 
 
