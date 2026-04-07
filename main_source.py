@@ -20,50 +20,66 @@ with st.sidebar:
 packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['xlsx'])
 
 if packing_file:
-    # Read raw data without headers to search freely
-    df_raw = pd.read_excel(packing_file, header=None)
+    # Read the whole sheet as strings first to find keywords easily
+    df_raw = pd.read_excel(packing_file, header=None).astype(str)
     
-    # helper function to find numbers near keywords
-    def find_value_near(keyword, offset_row=-1, offset_col=0):
-        try:
-            # Find the row and column index of the keyword
-            mask = df_raw.astype(str).apply(lambda x: x.str.contains(keyword, case=False, na=False))
-            pos = mask.values.nonzero()
-            if len(pos[0]) > 0:
-                row, col = pos[0][0], pos[1][0]
-                val = df_raw.iloc[row + offset_row, col + offset_col]
-                return pd.to_numeric(val, errors='coerce')
-            return 0
-        except:
-            return 0
+    # Helper to find a value based on a keyword
+    def get_val(keyword, row_off=0, col_off=0):
+        for r in range(len(df_raw)):
+            for c in range(len(df_raw.columns)):
+                if keyword.lower() in df_raw.iloc[r, c].lower():
+                    # Return the cell at the offset
+                    res = df_raw.iloc[r + row_off, c + col_off]
+                    return res
+        return "0"
 
-    # 1. GRAB TOTALS FROM THE SUMMARY FOOTER (As requested)
-    pallet_count = int(find_value_near("Pallets", offset_row=-1)) 
-    total_units = int(find_value_near("Units", offset_row=-1))
-    total_weight_lbs = find_value_near("Gross Weight", offset_row=-1)
+    # 1. GRAB TOTALS FROM FOOTER (Looking above the labels as per your image)
+    pallet_count = get_val("Pallets", row_off=-1)
+    total_units = get_val("Units", row_off=-1)
+    total_weight_lbs = get_val("Gross Weight", row_off=-1)
+
+    # Clean the numbers (remove commas or symbols)
+    def clean_num(val):
+        clean = "".join(c for c in str(val) if c.isdigit() or c == '.')
+        return float(clean) if clean else 0.0
+
+    pallets_final = int(clean_num(pallet_count))
+    units_final = int(clean_num(total_units))
+    lbs_final = clean_num(total_weight_lbs)
+    kgs_final = lbs_final * 0.453592
+
+    # 2. DYNAMIC DIMENSION FINDER
+    # Instead of 'Dim / Pallet', we find whichever column contains "Dim" and "Pallet"
+    dim_list = []
+    dim_col_idx = -1
     
-    # Calculate KG based on the LBS found in the footer
-    total_weight_kgs = total_weight_lbs * 0.453592
+    # Find which column index has the dimensions
+    for c in range(len(df_raw.columns)):
+        column_data = df_raw.iloc[:, c]
+        if any("dim" in str(val).lower() and "pallet" in str(val).lower() for val in column_data):
+            dim_col_idx = c
+            break
+    
+    if dim_col_idx != -1:
+        # Get all values in that column, skip headers, and filter out noise
+        potential_dims = df_raw.iloc[3:, dim_col_idx].tolist()
+        dim_list = [d.strip() for d in potential_dims if "x" in d.lower() and len(d) > 3]
 
-    # 2. DIMENSIONS (Still needs to look at the main table)
-    df_table = pd.read_excel(packing_file, header=2)
-    raw_dims = df_table['Dim / Pallet'].dropna().astype(str).tolist()
-    raw_dims = [d for d in raw_dims if "Dim" not in d and d.strip() != ""]
-    dim_counts = Counter(raw_dims)
+    dim_counts = Counter(dim_list)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
 
-    st.success(f"✅ Found Footer Totals: {pallet_count} Pallets | {total_units:,} Units | {total_weight_lbs:,.2f} LBS")
+    st.success(f"✅ Data Found: {pallets_final} Pallets | {units_final:,} Units | {lbs_final:,.2f} LBS")
 
-    # --- THE GENERATE BUTTON ---
+    # --- GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
         
-        # 3. CREATE THE DATA TABLE FOR EXCEL
+        # 3. CONSTRUCT THE OUTPUT
         quote_data = [
             ["QUOTE REQUEST", ""],
             ["DESTINATION", destination],
             ["SERVICE", service],
-            ["UNITS", f"{total_units:,}"],
-            ["PALLETS", pallet_count],
+            ["UNITS", f"{units_final:,}"],
+            ["PALLETS", pallets_final],
             ["DIMENSIONS", formatted_dims[0] if formatted_dims else ""],
         ]
         
@@ -73,28 +89,26 @@ if packing_file:
 
         quote_data.extend([
             ["", ""],
-            ["TOTAL WEIGHT", f"{total_weight_lbs:,.2f} LBS | {total_weight_kgs:,.2f} KGS"],
+            ["TOTAL WEIGHT", f"{lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS"],
             ["COMMODITY", commodity],
             ["INCOTERMS", incoterms],
             ["VALUE OF CARGO", cargo_value]
         ])
         
-        df_quote = pd.DataFrame(quote_data)
-
-        # 4. EXCEL GENERATION
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_quote.to_excel(writer, index=False, header=False, sheet_name='Quote Request')
+        df_output = pd.DataFrame(quote_data)
         
-        # 5. EMAIL DRAFT
-        email_body = f"Hi Team,\n\nQuote Request for {destination}:\n- {pallet_count} Pallets\n- {total_weight_lbs:,.2f} LBS\n- {total_units:,} Units\n\nAttached: Packing List."
+        # Excel Save
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            df_output.to_excel(writer, index=False, header=False)
 
         st.divider()
-        col_dl, col_em = st.columns(2)
-        
-        with col_dl:
-            st.download_button("📥 Download Quote Request.xlsx", data=buffer.getvalue(), file_name=f"Quote_{pallet_count}PLTS.xlsx")
-            st.table(df_quote)
-
-        with col_em:
-            st.text_area("Email Draft:", value=email_body, height=300)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.download_button("📥 Download Excel", data=buf.getvalue(), file_name="Quote_Request.xlsx")
+            st.table(df_output)
+        with c2:
+            email = f"Hi,\n\nQuote for {destination}:\n- {pallets_final} Pallets\n- {lbs_final} LBS\n\nThanks!"
+            st.text_area("Email:", value=email, height=300)
+else:
+    st.info("Upload your Packing List to begin.")
