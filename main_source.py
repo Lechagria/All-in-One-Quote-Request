@@ -89,9 +89,9 @@ if packing_file:
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
 
     if pallets_final == 0 and units_final == 0:
-        st.error("⚠️ Summary not found. Please check 'Pallets' and 'Units' labels in footer.")
+        st.error("⚠️ Summary not found. Please check labels in footer.")
     else:
-        st.success(f"✅ Data Extracted: {pallets_final} Pallets | {units_final:,} Units")
+        st.success(f"✅ Data Extracted: **{pallets_final}** Pallets | **{units_final:,}** Units")
 
     # --- GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
@@ -125,9 +125,8 @@ if packing_file:
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
             df_output.to_excel(writer, index=False, header=False)
 
-        # 5. GENERATE PROFESSIONAL EMAIL CONTENT (Table Format)
-        # We define dim_rows FIRST so we don't get a NameError
-        dim_rows = "\n".join([f"| Dimensions | {d} |" for d in formatted_dims])
+        # 5. GENERATE EMAIL CONTENT (Bulleted List with Bold Labels)
+        dim_string = "".join([f"\n- **Dimensions**: {d}" for d in formatted_dims])
         
         email_body = f"""Hi Team,
 
@@ -135,15 +134,14 @@ Hope you are having a great week!
 
 Please find the details below for a new {service} shipment quote:
 
-- **Destination:** {destination}
-- Service: {service}
-- Total Units: {units_final:,}
-- Pallets: {pallets_final}
-{dim_string}
-- Total Weight: {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS
-- Commodity: {commodity}
-- Value: {cargo_value}
-- Incoterms: {incoterms}
+- **Destination**: {destination}
+- **Service**: {service}
+- **Total Units**: {units_final:,}
+- **Pallets**: {pallets_final}{dim_string}
+- **Total Weight**: {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS
+- **Commodity**: {commodity}
+- **Value**: {cargo_value}
+- **Incoterms**: {incoterms}
 
 Please let us know the best rates and estimated transit times for this. 
 
@@ -159,9 +157,9 @@ Thanks!"""
             st.table(df_output)
         with c2:
             st.subheader("2. Email Draft")
-            # NEW: COPY TO CLIPBOARD BUTTON
+            # The requested copy button
             st.copy_to_clipboard(email_body)
-            st.info("👆 Click the button above to copy the email.")
-            st.markdown(email_body) # Preview of how it looks
+            st.info("👆 Click the 'Copy' icon in the top right of the box above to grab the text.")
+            st.markdown(email_body)
 else:
     st.info("Please upload the Outbound Packing List to begin.")
