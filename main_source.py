@@ -11,10 +11,10 @@ st.title("📦 Logistics Quote Pipeline")
 # --- CUSTOM LISTS ---
 destinations = [
     "UK - Radial FAO Monat, Middleton Oldham OL9 9XA",
-    "POLAND - Radial Poland Sp. z o.o. Moszna Parcela 29, Budynek C3 05-840 Brwinów",
-    "AUSTRALIA - FDM WAREHOUSING C/O Landmark Global 7 Eucalyptus Place",
-    "MONAT Global Canada — 135 SPARKS AVE NORTH YORK ON M2H 2S5 Canada",
-    "FENIX FWD INC. - 417 LOGISTIC LAREDO, TEXAS 78045",
+    "POLAND - Panattoni Park Pruszków IV, ul. Przejazdowa 25, 05-800 Pruszków",
+    "SPAIN - MONAT Spain c/o Logifashion, Calle de la Malvasia 2, 19200 Azuqueca de Henares, Guadalajara",
+    "LITHUANIA - Girteka Logistics, Metalistų g. 6, LT-78107 Šiauliai",
+    "IRELAND - Monat Ireland c/o Ace Express Freight, Unit 3, Blakes Cross Business Park, Lusk, Co. Dublin",
     "OTHER (Type Manually below)"
 ]
 
@@ -23,9 +23,6 @@ services = [
     "LTL Road",
     "FCL Ocean",
     "Air Freight",
-    "40 REEFER",
-    "40 DRY",
-    "20 DRY",
     "Courier"
 ]
 
@@ -33,16 +30,13 @@ services = [
 with st.sidebar:
     st.header("Shipment Details")
     
-    # Destination Selection
     selected_dest = st.selectbox("Select Destination", destinations)
     if selected_dest == "OTHER (Type Manually below)":
         destination = st.text_input("Enter Manual Destination", value="")
     else:
         destination = selected_dest
 
-    # Service Selection
     service = st.selectbox("Service", services)
-    
     commodity = st.text_input("Commodity", value="Finished goods / Haircare / Skincare")
     cargo_value = st.text_input("Value of Cargo", value="USD$ ")
     incoterms = st.selectbox("Incoterms", ["-", "EXW", "FOB", "DDP", "DAP", "CIF"])
@@ -51,10 +45,8 @@ with st.sidebar:
 packing_file = st.file_uploader("Upload Outbound Packing List (.xlsx)", type=['xlsx'])
 
 if packing_file:
-    # 1. READ RAW DATA
     df_raw = pd.read_excel(packing_file, header=None).astype(str)
     
-    # Helper to find a value based on a keyword (Searching from bottom up for footer)
     def get_val(keyword, row_off=0, col_off=0):
         for r in range(len(df_raw)-1, -1, -1):
             for c in range(len(df_raw.columns)):
@@ -66,11 +58,9 @@ if packing_file:
                         return "0"
         return "0"
 
-    # AGGRESSIVE CLEANER: Removes commas, spaces, and text
     def clean_num(val):
         if pd.isna(val) or str(val).lower() == 'nan':
             return 0.0
-        # Aggressively remove anything that isn't a digit or a decimal point
         clean = re.sub(r'[^\d.]', '', str(val))
         try:
             return float(clean)
@@ -98,11 +88,10 @@ if packing_file:
     dim_counts = Counter(dim_list)
     formatted_dims = [f"{d} (x{count})" if count > 1 else d for d, count in dim_counts.items()]
 
-    # UI Feedback
     if pallets_final == 0 and units_final == 0:
         st.error("⚠️ Summary not found. Please check 'Pallets' and 'Units' labels in footer.")
     else:
-        st.success(f"✅ Data Extracted: {pallets_final} Pallets | {units_final:,} Units | {lbs_final:,.2f} LBS")
+        st.success(f"✅ Data Extracted: {pallets_final} Pallets | {units_final:,} Units")
 
     # --- GENERATE BUTTON ---
     if st.button("🚀 Generate Template"):
@@ -132,13 +121,13 @@ if packing_file:
         ])
         
         df_output = pd.DataFrame(quote_data)
-        
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
             df_output.to_excel(writer, index=False, header=False)
 
-        # 5. GENERATE PROFESSIONAL EMAIL CONTENT
-        dim_string = "\n".join([f"- Dimensions: {d}" for d in formatted_dims])
+        # 5. GENERATE PROFESSIONAL EMAIL CONTENT (Table Format)
+        # We define dim_rows FIRST so we don't get a NameError
+        dim_rows = "\n".join([f"| Dimensions | {d} |" for d in formatted_dims])
         
         email_body = f"""Hi Team,
 
@@ -153,7 +142,7 @@ Please find the details below for a new {service} shipment quote:
 | **Total Units** | {units_final:,} |
 | **Pallets** | {pallets_final} |
 {dim_rows}
-| **Total Weight** | {lbs_final:,.2f} LBS \| {kgs_final:,.2f} KGS |
+| **Total Weight** | {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS |
 | **Commodity** | {commodity} |
 | **Value** | {cargo_value} |
 | **Incoterms** | {incoterms} |
@@ -172,6 +161,6 @@ Thanks!"""
             st.table(df_output)
         with c2:
             st.subheader("2. Copy Email")
-            st.text_area("Email Draft:", value=email_body, height=450)
+            st.text_area("Email Draft:", value=email_body, height=500)
 else:
     st.info("Please upload the Outbound Packing List to begin.")
