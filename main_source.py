@@ -140,21 +140,23 @@ if packing_file:
         # 5. GENERATE PROFESSIONAL EMAIL CONTENT
         dim_string = "\n".join([f"- Dimensions: {d}" for d in formatted_dims])
         
-        email_body = f"""Hi Team,
+        email_body = ff"""Hi Team,
 
 Hope you are having a great week! 
 
 Please find the details below for a new {service} shipment quote:
 
-- Destination: {destination}
-- Service: {service}
-- Total Units: {units_final:,}
-- Pallets: {pallets_final}
-{dim_string}
-- Total Weight: {lbs_final:,.2f} LBS | {kgs_final:,.2f} KGS
-- Commodity: {commodity}
-- Value: {cargo_value}
-- Incoterms: {incoterms}
+| Category | Shipment Details |
+| :--- | :--- |
+| **Destination** | {destination} |
+| **Service** | {service} |
+| **Total Units** | {units_final:,} |
+| **Pallets** | {pallets_final} |
+{dim_rows}
+| **Total Weight** | {lbs_final:,.2f} LBS \| {kgs_final:,.2f} KGS |
+| **Commodity** | {commodity} |
+| **Value** | {cargo_value} |
+| **Incoterms** | {incoterms} |
 
 Please let us know the best rates and estimated transit times for this. 
 
